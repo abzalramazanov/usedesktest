@@ -9,13 +9,15 @@ app.use(bodyParser.json());
 // Проверяем наличие обязательных переменных окружения
 console.log('USEDESK_API_TOKEN:', process.env.USEDESK_API_TOKEN ? 'Present' : 'Missing');
 console.log('USEDESK_USER_ID:', process.env.USEDESK_USER_ID ? 'Present' : 'Missing');
-if (!process.env.USEDESK_API_TOKEN || !process.env.USEDESK_USER_ID) {
+console.log('USEDESK_CHANNEL_ID:', process.env.USEDESK_CHANNEL_ID ? 'Present' : 'Missing');
+if (!process.env.USEDESK_API_TOKEN || !process.env.USEDESK_USER_ID || !process.env.USEDESK_CHANNEL_ID) {
   console.error('ERROR: Missing required environment variables');
   process.exit(1);
 }
 
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
+const USEDESK_CHANNEL_ID = process.env.USEDESK_CHANNEL_ID;
 const PORT = process.env.PORT || 3000;
 
 app.post('/webhook', async (req, res) => {
@@ -42,6 +44,10 @@ app.post('/webhook', async (req, res) => {
     else if (req.body.trigger && req.body.trigger.message) {
       messageText = req.body.trigger.message;
     }
+    // Вариант 4: текст в trigger.comment (для тикетов)
+    else if (req.body.trigger && req.body.trigger.comment) {
+      messageText = req.body.trigger.comment;
+    }
 
     console.log('Извлеченный текст сообщения:', messageText);
 
@@ -50,39 +56,46 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ status: 'ignored_no_text' });
     }
 
-    // 2. Проверяем, является ли сообщение словом "привет" (без учета регистра)
-    const isHello = messageText.trim().toLowerCase() === 'привет';
-    if (!isHello) {
-      console.log('Игнорируем запрос - сообщение не "привет"');
-      return res.status(200).json({ status: 'ignored_not_hello' });
+    // 2. Получаем информацию о клиенте
+    let client_id = req.body.client_id || req.body.client?.id || req.body.trigger?.client_id;
+    let client_phone = null;
+    
+    if (req.body.client && req.body.client.phones && req.body.client.phones.length > 0) {
+      client_phone = req.body.client.phones[0].phone;
     }
 
-    // 3. Получаем ID чата/тикета
-    const chat_id = req.body.chat_id || req.body.ticket?.id || req.body.trigger?.ticket_id;
-    if (!chat_id) {
-      console.log('Отсутствует ID чата/тикета');
-      return res.status(400).json({ error: 'Missing chat/ticket ID' });
+    // Если клиент новый или неизвестен, используем client_id: "new_client"
+    if (!client_id || !client_phone) {
+      client_id = 'new_client';
+      client_phone = client_phone || '79123456789'; // Замените на реальный номер, если известен
     }
 
-    console.log(`Обработка сообщения "привет" в чате/тикете ${chat_id}`);
+    console.log(`Обработка сообщения от клиента: client_id=${client_id}, client_phone=${client_phone}`);
 
-    // 4. Формируем ответ
-    const responseText = `Здравствуйте! Чем могу помочь?`;
+    // 3. Формируем данные для создания тикета
+    const ticketData = {
+      api_token: USEDESK_API_TOKEN,
+      subject: 'Новое сообщение от клиента',
+      message: messageText,
+      user_id: USEDESK_USER_ID,
+      from: 'whatsapp',
+      channel_id: USEDESK_CHANNEL_ID,
+      client_id: client_id
+    };
 
-    // 5. Отправляем ответ
-    const apiUrl = `https://api.usedesk.ru/chat/sendMessage`;
+    // Добавляем client_phone, если клиент новый
+    if (client_id === 'new_client') {
+      ticketData.client_phone = client_phone;
+    }
+
+    // 4. Отправляем запрос на создание тикета
+    const apiUrl = `https://api.usedesk.ru/create/ticket`;
     console.log('Отправка на:', apiUrl);
     
     try {
       const response = await axios.post(
         apiUrl,
-        {
-          api_token: USEDESK_API_TOKEN,
-          chat_id: chat_id,
-          message: responseText,
-          type: 'user',
-          user_id: USEDESK_USER_ID
-        },
+        ticketData,
         {
           headers: { 
             'Content-Type': 'application/json'
@@ -91,15 +104,16 @@ app.post('/webhook', async (req, res) => {
         }
       );
 
-      console.log('Ответ успешно отправлен:', response.data);
-      return res.status(200).json({ success: true });
+      console.log('Тикет успешно создан:', response.data);
+      return res.status(200).json({ success: true, ticket_id: response.data.ticket_id });
     } catch (apiError) {
       console.error('Ошибка API UseDesk:', {
         message: apiError.message,
         code: apiError.code,
         response: apiError.response?.data,
         status: apiError.response?.status,
-        requestUrl: apiUrl
+        requestUrl: apiUrl,
+        requestData: ticketData
       });
       throw apiError;
     }
@@ -121,7 +135,7 @@ app.post('/webhook', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'running',
-    service: 'UseDesk Hello Bot',
+    service: 'UseDesk WhatsApp Ticket Bot',
     environment: {
       PORT: PORT
     }
