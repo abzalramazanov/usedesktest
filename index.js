@@ -6,14 +6,16 @@ const bodyParser = require('body-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// Проверяем наличие обязательной переменной окружения
-console.log('USEDESK_API_KEY:', process.env.USEDESK_API_KEY ? 'Present' : 'Missing');
-if (!process.env.USEDESK_API_KEY) {
-  console.error('ERROR: Missing required environment variable USEDESK_API_KEY');
+// Проверяем наличие обязательных переменных окружения
+console.log('USEDESK_API_TOKEN:', process.env.USEDESK_API_TOKEN ? 'Present' : 'Missing');
+console.log('USEDESK_USER_ID:', process.env.USEDESK_USER_ID ? 'Present' : 'Missing');
+if (!process.env.USEDESK_API_TOKEN || !process.env.USEDESK_USER_ID) {
+  console.error('ERROR: Missing required environment variables');
   process.exit(1);
 }
 
-const USEDESK_API_KEY = process.env.USEDESK_API_KEY;
+const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
+const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const PORT = process.env.PORT || 3000;
 
 app.post('/webhook', async (req, res) => {
@@ -36,8 +38,12 @@ app.post('/webhook', async (req, res) => {
         messageText = clientComments[0].message;
       }
     }
+    // Вариант 3: текст в trigger.message или других полях (для тикетов)
+    else if (req.body.trigger && req.body.trigger.message) {
+      messageText = req.body.trigger.message;
+    }
 
-    console.log('Извлеченный текст сообщения:', messageText); // Лог для отладки
+    console.log('Извлеченный текст сообщения:', messageText);
 
     if (!messageText) {
       console.log('Игнорируем запрос - текст сообщения не найден');
@@ -52,7 +58,7 @@ app.post('/webhook', async (req, res) => {
     }
 
     // 3. Получаем ID чата/тикета
-    const chat_id = req.body.chat_id || req.body.ticket?.id;
+    const chat_id = req.body.chat_id || req.body.ticket?.id || req.body.trigger?.ticket_id;
     if (!chat_id) {
       console.log('Отсутствует ID чата/тикета');
       return res.status(400).json({ error: 'Missing chat/ticket ID' });
@@ -71,13 +77,14 @@ app.post('/webhook', async (req, res) => {
       const response = await axios.post(
         apiUrl,
         {
-          chat_id,
+          api_token: USEDESK_API_TOKEN,
+          chat_id: chat_id,
           message: responseText,
-          type: 'support'
+          type: 'user',
+          user_id: USEDESK_USER_ID
         },
         {
           headers: { 
-            'Authorization': `Bearer ${USEDESK_API_KEY}`,
             'Content-Type': 'application/json'
           },
           timeout: 5000
