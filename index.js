@@ -20,13 +20,7 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('Incoming webhook:', JSON.stringify(req.body, null, 2));
 
-    // 1. Проверяем что это сообщение от Abzal
-    if (!req.body.client || req.body.client.name !== 'Abzal') {
-      console.log('Ignoring request - not from Abzal');
-      return res.status(200).json({ status: 'ignored_not_abzal' });
-    }
-
-    // 2. Проверяем наличие текста сообщения (новый способ)
+    // 1. Проверяем наличие текста сообщения
     let messageText = '';
     
     // Вариант 1: текст в корне запроса (для чатов)
@@ -48,6 +42,13 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ status: 'ignored_no_text' });
     }
 
+    // 2. Проверяем, является ли сообщение словом "привет" (case-insensitive)
+    const isHello = messageText.trim().toLowerCase() === 'привет';
+    if (!isHello) {
+      console.log('Ignoring request - message is not "привет"');
+      return res.status(200).json({ status: 'ignored_not_hello' });
+    }
+
     // 3. Получаем ID чата/тикета
     const chat_id = req.body.chat_id || req.body.ticket?.id;
     if (!chat_id) {
@@ -55,10 +56,10 @@ app.post('/webhook', async (req, res) => {
       return res.status(400).json({ error: 'Missing chat/ticket ID' });
     }
 
-    console.log(`Processing message from Abzal in chat/ticket ${chat_id}: "${messageText}"`);
+    console.log(`Processing "привет" message in chat/ticket ${chat_id}`);
 
     // 4. Формируем ответ
-    const responseText = `Abzal, мы получили: "${messageText}". Спасибо за обращение!`;
+    const responseText = `Здравствуйте! Чем могу помочь?`;
 
     // 5. Отправляем ответ
     const apiUrl = `https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`;
@@ -100,7 +101,7 @@ app.post('/webhook', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'running',
-    service: 'UseDesk Abzal Bot',
+    service: 'UseDesk Hello Bot',
     environment: {
       USEDESK_SUBDOMAIN: USEDESK_SUBDOMAIN,
       PORT: PORT
