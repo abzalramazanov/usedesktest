@@ -3,73 +3,87 @@ const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
 
+// Инициализация приложения
 const app = express();
 app.use(bodyParser.json());
 
+// Конфигурация
 const USEDESK_API_KEY = process.env.USEDESK_API_KEY;
 const USEDESK_SUBDOMAIN = process.env.USEDESK_SUBDOMAIN;
 const PORT = process.env.PORT || 3000;
 
-// Health check endpoint
+// Проверка работы сервера
 app.get('/', (req, res) => {
-  res.status(200).send('UseDesk AI Bot is running');
+  res.status(200).json({ 
+    status: 'OK',
+    service: 'UseDesk WhatsApp Bot',
+    version: '1.0'
+  });
 });
 
-// Webhook handler
+// Основной обработчик вебхуков
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Received webhook:', JSON.stringify(req.body, null, 2));
+    console.log('Incoming webhook:', JSON.stringify(req.body, null, 2));
 
-    const { ticket, comments } = req.body;
+    // Извлекаем данные из вебхука
+    const { chat_id, ticket, text, platform, client } = req.body;
     
-    if (!ticket || !comments) {
-      return res.status(400).json({ error: 'Invalid webhook format' });
+    // Валидация входящих данных
+    if (!ticket || !ticket.id) {
+      return res.status(400).json({ error: 'Missing ticket data' });
     }
 
-    // Находим последнее сообщение от клиента
-    const lastClientComment = comments.find(comment => 
-      comment.from === 'client' && comment.message && comment.message.trim() !== ''
-    );
+    // Определяем тип контента
+    const hasText = text && text.trim() !== '';
+    const hasFiles = req.body.files && req.body.files.length > 0;
 
-    if (!lastClientComment) {
-      console.log('No client message found in comments');
-      return res.status(200).json({ status: 'No client message to process' });
+    // Логируем тип сообщения
+    console.log(`Processing ${platform} message in chat ${chat_id}:`, {
+      text,
+      hasFiles,
+      client: client?.name
+    });
+
+    // Генерация ответа
+    let responseText;
+    if (hasFiles && !hasText) {
+      responseText = 'Мы получили ваше изображение. Обрабатываем запрос...';
+    } else if (text.toLowerCase().includes('привет')) {
+      responseText = 'Добрый день! Чем можем помочь?';
+    } else {
+      responseText = 'Спасибо за обращение! Ваш запрос в обработке.';
     }
-
-    const ticketId = ticket.id;
-    const messageText = lastClientComment.message;
-    const clientName = lastClientComment.client_name || 'Клиент';
-
-    console.log(`Processing ticket #${ticketId} from ${clientName}: "${messageText}"`);
-
-    // Генерация ответа (можно заменить на вызов AI)
-    const aiResponse = `Уважаемый(ая) ${clientName}, мы получили ваше сообщение: "${messageText}". Наш специалист скоро с вами свяжется!`;
 
     // Отправка ответа через UseDesk API
-    const apiResponse = await axios.post(
+    const response = await axios.post(
       `https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`,
       {
-        ticket_id: ticketId,
-        message: aiResponse,
+        chat_id,
+        ticket_id: ticket.id,
+        message: responseText,
         type: 'support'
       },
       {
         headers: { 
           'Authorization': `Bearer ${USEDESK_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 5000 // Таймаут 5 секунд
       }
     );
 
-    console.log('Successfully sent reply:', apiResponse.data);
+    console.log('Message sent successfully:', response.data);
     return res.status(200).json({ success: true });
 
   } catch (error) {
-    console.error('Error processing webhook:', {
-      message: error.message,
+    console.error('Webhook processing failed:', {
+      error: error.message,
       stack: error.stack,
+      requestBody: req.body,
       response: error.response?.data
     });
+    
     return res.status(500).json({ 
       error: 'Internal server error',
       details: error.message 
@@ -77,13 +91,18 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Start server
+// Обработка несуществующих роутов
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Запуск сервера
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`UseDesk subdomain: ${USEDESK_SUBDOMAIN}`);
 });
 
-// Error handling
+// Обработка ошибок процесса
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
