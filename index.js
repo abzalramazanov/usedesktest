@@ -1,44 +1,28 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const bodyParser = require('body-parser');
-
-// 1. Инициализация Express приложения
-const app = express();
-app.use(bodyParser.json());
-
-const USEDESK_API_KEY = process.env.USEDESK_API_KEY;
-const USEDESK_SUBDOMAIN = process.env.USEDESK_SUBDOMAIN || 'yourcompany';
-
-// 2. Health check endpoint
-app.get('/', (req, res) => {
-  res.send('UseDesk AI Bot is running');
-});
-
-// 3. Webhook endpoint
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Incoming webhook:', JSON.stringify(req.body, null, 2));
+    console.log('Full webhook received:', JSON.stringify(req.body, null, 2));
 
-    const { ticket, message } = req.body;
+    // Обрабатываем структуру WhatsApp-чата из UseDesk
+    const { ticket, text, chat_id } = req.body;
     
-    if (!ticket || !message) {
-      throw new Error('Invalid webhook format');
+    if (!ticket || !text) {
+      throw new Error('Required fields missing');
     }
 
     const ticketId = ticket.id;
-    const messageText = message.text || message.content;
+    const messageText = text;
 
-    console.log(`Processing ticket #${ticketId}: "${messageText}"`);
+    console.log(`Processing WhatsApp chat #${chat_id}, ticket #${ticketId}: "${messageText}"`);
 
-    // Генерация ответа
-    const aiResponse = `Бот получил ваш запрос: "${messageText}". Мы обрабатываем его!`;
+    // Генерация ответа (можно подключить OpenAI здесь)
+    const aiResponse = `Спасибо за ваше сообщение: "${messageText}". Наш специалист скоро свяжется с вами!`;
 
-    // Отправка ответа в UseDesk
-    await axios.post(`https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`, {
+    // Отправка ответа через UseDesk API
+    const response = await axios.post(`https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`, {
       ticket_id: ticketId,
       message: aiResponse,
-      type: 'support'
+      type: 'support',
+      chat_id: chat_id // Важно для WhatsApp чатов
     }, {
       headers: { 
         'Authorization': `Bearer ${USEDESK_API_KEY}`,
@@ -46,18 +30,18 @@ app.post('/webhook', async (req, res) => {
       }
     });
 
+    console.log('Message sent successfully:', response.data);
     res.status(200).json({ success: true });
+    
   } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ 
+    console.error('Webhook processing failed:', {
       error: error.message,
-      received_body: req.body
+      stack: error.stack,
+      requestBody: req.body
+    });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
     });
   }
-});
-
-// 4. Запуск сервера
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
