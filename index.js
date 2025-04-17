@@ -12,7 +12,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // 3. Конфигурация
 const USEDESK_API_KEY = process.env.USEDESK_API_KEY;
-const USEDESK_SUBDOMAIN = process.env.USEDESK_SUBDOMAIN || 'yourcompany';
+const USEDESK_SUBDOMAIN = process.env.USEDESK_SUBDOMAIN || '170453';
 const PORT = process.env.PORT || 3000;
 
 // 4. Проверка работы сервера
