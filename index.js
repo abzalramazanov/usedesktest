@@ -7,6 +7,8 @@ const app = express();
 app.use(bodyParser.json());
 
 // Проверяем наличие обязательных переменных окружения
+console.log('USEDESK_API_KEY:', process.env.USEDESK_API_KEY ? 'Present' : 'Missing');
+console.log('USEDESK_SUBDOMAIN:', process.env.USEDESK_SUBDOMAIN ? 'Present' : 'Missing');
 if (!process.env.USEDESK_API_KEY || !process.env.USEDESK_SUBDOMAIN) {
   console.error('ERROR: Missing required environment variables');
   process.exit(1);
@@ -18,7 +20,7 @@ const PORT = process.env.PORT || 3000;
 
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Incoming webhook:', JSON.stringify(req.body, null, 2));
+    console.log('Входящий вебхук:', JSON.stringify(req.body, null, 2));
 
     // 1. Проверяем наличие текста сообщения
     let messageText = '';
@@ -38,32 +40,32 @@ app.post('/webhook', async (req, res) => {
     }
 
     if (!messageText) {
-      console.log('Ignoring request - no text message found');
+      console.log('Игнорируем запрос - текст сообщения не найден');
       return res.status(200).json({ status: 'ignored_no_text' });
     }
 
-    // 2. Проверяем, является ли сообщение словом "привет" (case-insensitive)
+    // 2. Проверяем, является ли сообщение словом "привет" (без учета регистра)
     const isHello = messageText.trim().toLowerCase() === 'привет';
     if (!isHello) {
-      console.log('Ignoring request - message is not "привет"');
+      console.log('Игнорируем запрос - сообщение не "привет"');
       return res.status(200).json({ status: 'ignored_not_hello' });
     }
 
     // 3. Получаем ID чата/тикета
     const chat_id = req.body.chat_id || req.body.ticket?.id;
     if (!chat_id) {
-      console.log('Missing chat/ticket ID');
+      console.log('Отсутствует ID чата/тикета');
       return res.status(400).json({ error: 'Missing chat/ticket ID' });
     }
 
-    console.log(`Processing "привет" message in chat/ticket ${chat_id}`);
+    console.log(`Обработка сообщения "привет" в чате/тикете ${chat_id}`);
 
     // 4. Формируем ответ
     const responseText = `Здравствуйте! Чем могу помочь?`;
 
     // 5. Отправляем ответ
     const apiUrl = `https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`;
-    console.log('Sending to:', apiUrl);
+    console.log('Отправка на:', apiUrl);
     
     const response = await axios.post(
       apiUrl,
@@ -81,18 +83,18 @@ app.post('/webhook', async (req, res) => {
       }
     );
 
-    console.log('Successfully sent reply:', response.data);
+    console.log('Ответ успешно отправлен:', response.data);
     return res.status(200).json({ success: true });
 
   } catch (error) {
-    console.error('Error processing webhook:', {
+    console.error('Ошибка обработки вебхука:', {
       message: error.message,
       stack: error.stack,
       response: error.response?.data,
       request: error.config?.data
     });
     return res.status(500).json({ 
-      error: 'Internal server error',
+      error: 'Внутренняя ошибка сервера',
       details: error.message 
     });
   }
@@ -110,6 +112,6 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`UseDesk domain: ${USEDESK_SUBDOMAIN}.usedesk.ru`);
+  console.log(`Сервер запущен на порту ${PORT}`);
+  console.log(`Домен UseDesk: ${USEDESK_SUBDOMAIN}.usedesk.ru`);
 });
