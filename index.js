@@ -6,16 +6,14 @@ const bodyParser = require('body-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// Проверяем наличие обязательных переменных окружения
+// Проверяем наличие обязательной переменной окружения
 console.log('USEDESK_API_KEY:', process.env.USEDESK_API_KEY ? 'Present' : 'Missing');
-console.log('USEDESK_SUBDOMAIN:', process.env.USEDESK_SUBDOMAIN ? 'Present' : 'Missing');
-if (!process.env.USEDESK_API_KEY || !process.env.USEDESK_SUBDOMAIN) {
-  console.error('ERROR: Missing required environment variables');
+if (!process.env.USEDESK_API_KEY) {
+  console.error('ERROR: Missing required environment variable USEDESK_API_KEY');
   process.exit(1);
 }
 
 const USEDESK_API_KEY = process.env.USEDESK_API_KEY;
-const USEDESK_SUBDOMAIN = process.env.USEDESK_SUBDOMAIN;
 const PORT = process.env.PORT || 3000;
 
 app.post('/webhook', async (req, res) => {
@@ -38,6 +36,8 @@ app.post('/webhook', async (req, res) => {
         messageText = clientComments[0].message;
       }
     }
+
+    console.log('Извлеченный текст сообщения:', messageText); // Лог для отладки
 
     if (!messageText) {
       console.log('Игнорируем запрос - текст сообщения не найден');
@@ -64,27 +64,38 @@ app.post('/webhook', async (req, res) => {
     const responseText = `Здравствуйте! Чем могу помочь?`;
 
     // 5. Отправляем ответ
-    const apiUrl = `https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`;
+    const apiUrl = `https://api.usedesk.ru/chat/sendMessage`;
     console.log('Отправка на:', apiUrl);
     
-    const response = await axios.post(
-      apiUrl,
-      {
-        chat_id,
-        message: responseText,
-        type: 'support'
-      },
-      {
-        headers: { 
-          'Authorization': `Bearer ${USEDESK_API_KEY}`,
-          'Content-Type': 'application/json'
+    try {
+      const response = await axios.post(
+        apiUrl,
+        {
+          chat_id,
+          message: responseText,
+          type: 'support'
         },
-        timeout: 5000
-      }
-    );
+        {
+          headers: { 
+            'Authorization': `Bearer ${USEDESK_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 5000
+        }
+      );
 
-    console.log('Ответ успешно отправлен:', response.data);
-    return res.status(200).json({ success: true });
+      console.log('Ответ успешно отправлен:', response.data);
+      return res.status(200).json({ success: true });
+    } catch (apiError) {
+      console.error('Ошибка API UseDesk:', {
+        message: apiError.message,
+        code: apiError.code,
+        response: apiError.response?.data,
+        status: apiError.response?.status,
+        requestUrl: apiUrl
+      });
+      throw apiError;
+    }
 
   } catch (error) {
     console.error('Ошибка обработки вебхука:', {
@@ -105,7 +116,6 @@ app.get('/', (req, res) => {
     status: 'running',
     service: 'UseDesk Hello Bot',
     environment: {
-      USEDESK_SUBDOMAIN: USEDESK_SUBDOMAIN,
       PORT: PORT
     }
   });
@@ -113,5 +123,4 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
-  console.log(`Домен UseDesk: ${USEDESK_SUBDOMAIN}.usedesk.ru`);
 });
