@@ -1,47 +1,87 @@
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
+const bodyParser = require('body-parser');
+
+// 1. Инициализация Express приложения
+const app = express();
+
+// 2. Middleware
+app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 3. Конфигурация
+const USEDESK_API_KEY = process.env.USEDESK_API_KEY;
+const USEDESK_SUBDOMAIN = process.env.USEDESK_SUBDOMAIN || 'yourcompany';
+const PORT = process.env.PORT || 3000;
+
+// 4. Проверка работы сервера
+app.get('/', (req, res) => {
+  res.status(200).send('UseDesk AI Bot is running');
+});
+
+// 5. Обработчик вебхука
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Full webhook received:', JSON.stringify(req.body, null, 2));
+    console.log('Incoming webhook:', JSON.stringify(req.body, null, 2));
 
-    // Обрабатываем структуру WhatsApp-чата из UseDesk
+    // Проверка секретного ключа (если нужно)
+    if (req.body.secret !== process.env.WEBHOOK_SECRET) {
+      return res.status(403).json({ error: 'Invalid secret' });
+    }
+
+    // Обработка структуры WhatsApp
     const { ticket, text, chat_id } = req.body;
     
     if (!ticket || !text) {
-      throw new Error('Required fields missing');
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const ticketId = ticket.id;
-    const messageText = text;
+    console.log(`Processing ticket #${ticket.id}: "${text}"`);
 
-    console.log(`Processing WhatsApp chat #${chat_id}, ticket #${ticketId}: "${messageText}"`);
-
-    // Генерация ответа (можно подключить OpenAI здесь)
-    const aiResponse = `Спасибо за ваше сообщение: "${messageText}". Наш специалист скоро свяжется с вами!`;
+    // Генерация ответа
+    const aiResponse = `Мы получили ваше сообщение: "${text}". Скоро ответим!`;
 
     // Отправка ответа через UseDesk API
-    const response = await axios.post(`https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`, {
-      ticket_id: ticketId,
-      message: aiResponse,
-      type: 'support',
-      chat_id: chat_id // Важно для WhatsApp чатов
-    }, {
-      headers: { 
-        'Authorization': `Bearer ${USEDESK_API_KEY}`,
-        'Content-Type': 'application/json'
+    const apiResponse = await axios.post(
+      `https://${USEDESK_SUBDOMAIN}.usedesk.ru/api/v1/chats/message`,
+      {
+        ticket_id: ticket.id,
+        message: aiResponse,
+        type: 'support',
+        chat_id: chat_id
+      },
+      {
+        headers: { 
+          'Authorization': `Bearer ${USEDESK_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       }
-    });
+    );
 
-    console.log('Message sent successfully:', response.data);
-    res.status(200).json({ success: true });
-    
+    console.log('Message sent successfully:', apiResponse.data);
+    return res.status(200).json({ success: true });
+
   } catch (error) {
-    console.error('Webhook processing failed:', {
-      error: error.message,
+    console.error('Error:', {
+      message: error.message,
       stack: error.stack,
-      requestBody: req.body
+      response: error.response?.data
     });
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error',
       details: error.message 
     });
   }
+});
+
+// 6. Запуск сервера
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`UseDesk subdomain: ${USEDESK_SUBDOMAIN}`);
+});
+
+// 7. Обработка ошибок процесса
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
 });
